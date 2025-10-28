@@ -51,12 +51,14 @@ Invalid routes are filtered — only the **valid** Anycast node wins.
 ### 1. Clone & Deploy
 
 ```bash
-git clone https://github.com/<yourrepo>/BGP-rpki-prod.git
+git clone https://github.com/Arjun4522/BGP-RPKI-ROV
 cd BGP-rpki-prod
-sudo containerlab deploy -t bgp-anycast-rpki.clab.yml
+chmod +x roa-test.sh setup-anycast-rpki.sh
+sudo ./setup-anycast-rpki.sh
+sudo ./roa-test.sh
 ```
 
-Launches: `R1`, `R2`, `R6`, `R7`, `routinator`, `host1`, `host2`
+Launches: `R1`, `R2`,... `R6`, `R7`, `routinator`
 
 ---
 
