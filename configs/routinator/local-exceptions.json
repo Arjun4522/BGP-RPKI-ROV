@@ -1,0 +1,30 @@
+{
+  "slurmVersion": 1,
+  "validationOutputFilters": {
+    "prefixFilters": [],
+    "bgpsecFilters": []
+  },
+  "locallyAddedAssertions": {
+    "prefixAssertions": [
+      {
+        "asn": 65006,
+        "prefix": "10.10.10.10/32",
+        "maxPrefixLength": 32,
+        "comment": "Anycast server R6 - Valid path"
+      },
+      {
+        "asn": 65006,
+        "prefix": "6.6.6.6/32",
+        "maxPrefixLength": 32,
+        "comment": "R6 loopback"
+      },
+      {
+        "asn": 65007,
+        "prefix": "7.7.7.7/32",
+        "maxPrefixLength": 32,
+        "comment": "R7 loopback (NOT authorized for 10.10.10.10/32)"
+      }
+    ],
+    "bgpsecAssertions": []
+  }
+}
