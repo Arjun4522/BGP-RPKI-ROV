@@ -1,0 +1,113 @@
+name: bgp-anycast-krill
+
+topology:
+  nodes:
+    krill:
+      kind: linux
+      image: nlnetlabs/krill:latest
+      user: root
+      ports:
+        - "3000:3000"
+        - "3001:3001"
+      env:
+        KRILL_ADMIN_TOKEN: secret
+        KRILL_LOG_LEVEL: Info
+        KRILL_TA_SUPPORT_ENABLED: "true"
+
+      binds:
+        - ./configs/krill/krill.conf:/etc/krill.conf
+        - ./configs/krill:/var/krill/data
+
+    routinator:
+      kind: linux
+      image: nlnetlabs/routinator:latest
+      user: root
+      ports:
+        - "3324:3324"
+        - "8323:8323"
+      binds:
+        - ./configs/routinator:/root/.rpki-cache
+
+    R1:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R1:/etc/frr
+      exec:
+        - ip addr replace 10.0.12.1/24 dev eth1
+        - ip addr replace 10.0.14.1/24 dev eth2
+        - ip addr replace 1.1.1.1/32 dev lo
+        
+    R2:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R2:/etc/frr
+      exec:
+        - ip addr replace 10.0.12.2/24 dev eth1
+        - ip addr replace 10.0.23.2/24 dev eth2
+        - ip addr replace 10.0.26.2/24 dev eth3
+        - ip addr replace 2.2.2.2/32 dev lo
+        
+    R3:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R3:/etc/frr
+      exec:
+        - ip addr replace 10.0.23.3/24 dev eth1
+        - ip addr replace 10.0.53.3/24 dev eth2
+        - ip addr replace 3.3.3.3/32 dev lo
+
+    R4:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R4:/etc/frr
+      exec:
+        - ip addr replace 10.0.14.4/24 dev eth1
+        - ip addr replace 10.0.45.4/24 dev eth2
+        - ip addr replace 4.4.4.4/32 dev lo
+
+    R5:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R5:/etc/frr
+      exec:
+        - ip addr replace 10.0.45.5/24 dev eth1
+        - ip addr replace 10.0.53.5/24 dev eth2
+        - ip addr replace 10.0.57.5/24 dev eth3
+        - ip addr replace 5.5.5.5/32 dev lo
+
+    R6:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R6:/etc/frr
+      exec:
+        - ip addr replace 10.0.26.6/24 dev eth1
+        - ip addr replace 6.6.6.6/32 dev lo
+        - ip addr replace 10.10.10.10/32 dev lo
+
+    R7:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - ./configs/R7:/etc/frr
+      exec:
+        - ip addr replace 10.0.57.7/24 dev eth1
+        - ip addr replace 7.7.7.7/32 dev lo
+        - ip addr replace 10.10.10.10/32 dev lo
+
+  links:
+    # Core topology
+    - endpoints: ["R1:eth1", "R2:eth1"]
+    - endpoints: ["R2:eth2", "R3:eth1"]
+    - endpoints: ["R1:eth2", "R4:eth1"]
+    - endpoints: ["R4:eth2", "R5:eth1"]
+    - endpoints: ["R5:eth2", "R3:eth2"]
+    
+    # Anycast server connections
+    - endpoints: ["R2:eth3", "R6:eth1"]
+    - endpoints: ["R5:eth3", "R7:eth1"]
