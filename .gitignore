@@ -6,6 +6,7 @@ configs/routinator/cache/
 
 # Ignore Containerlab runtime directories
 clab-bgp-anycast-rpki/
+clab-bgp-anycast-krill/
 *.clab.yml.bak
 
 # Ignore Python cache
@@ -16,3 +17,24 @@ __pycache__/
 .DS_Store
 *.log
 *.tmp
+
+# Ignore generated config directories
+configs/R1/
+configs/R2/
+configs/R3/
+configs/R4/
+configs/R5/
+configs/R6/
+configs/R7/
+
+# Ignore krill-test generated files
+krill-test/clab-bgp-anycast-krill/
+krill-test/configs/R1/
+krill-test/configs/R2/
+krill-test/configs/R3/
+krill-test/configs/R4/
+krill-test/configs/R5/
+krill-test/configs/R6/
+krill-test/configs/R7/
+krill-test/configs/krill/
+krill-test/configs/routinator/
