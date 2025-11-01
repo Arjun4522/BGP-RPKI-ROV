@@ -4,6 +4,10 @@ configs/routinator/*.db
 configs/routinator/logs/
 configs/routinator/cache/
 
+krill-test/diagnose-frr.sh
+krill-test/interfaces.sh
+krill-test/backup.sh
+
 # Ignore Containerlab runtime directories
 clab-bgp-anycast-rpki/
 clab-bgp-anycast-krill/

@@ -41,13 +41,11 @@ bind_address = "0.0.0.0:3001"
 [rsync]
 base_uri = "rsync://127.0.0.1/repo/"
 
-# ⭐ ADD THIS TESTBED SECTION ⭐
 [testbed]
 rrdp_base_uri = "https://127.0.0.1:3001/rrdp/"
 rsync_jail = "rsync://127.0.0.1/repo/"
 ta_aia = "rsync://127.0.0.1/ta/ta.cer"
 ta_uri = "https://127.0.0.1:3001/ta/ta.cer"
-
 
 KRILL_CONF
 
@@ -57,22 +55,10 @@ echo ""
 # Create Routinator configuration file
 echo "📝 Creating Routinator configuration..."
 cat > configs/routinator/routinator.conf << 'ROUTINATOR_CONF'
-# RPKI cache directory
 repository-dir = "/root/.rpki-cache/repository"
-
-# RTR server configuration
 rtr-listen = ["0.0.0.0:3324"]
-
-# HTTP server configuration  
 http-listen = ["0.0.0.0:8323"]
-
-# Trust anchor locator for Krill (will be updated later)
-# tal-files = ["/root/.rpki-cache/tals/my-ca.tal"]
-
-# Validation refresh interval (seconds)
 refresh = 600
-
-# Stale object handling
 stale = "reject"
 ROUTINATOR_CONF
 
@@ -102,8 +88,8 @@ bfdd=no
 fabricd=no
 
 vtysh_enable=yes
-zebra_options=" -A 127.0.0.1 -s 90000000"
-bgpd_options="   -A 127.0.0.1 -M rpki"
+zebra_options=" -A 127.0.0.1 -s 90000000 -f /etc/frr/frr.conf"
+bgpd_options="   -A 127.0.0.1 -M rpki -f /etc/frr/frr.conf"
 DAEMONS
 done
 
@@ -117,7 +103,7 @@ done
 echo "✅ Base configuration files created with RPKI module enabled"
 echo ""
 
-# R1 Configuration - Core Router with RPKI
+# R1 Configuration - Core Router with RPKI (IP will be updated by script 5)
 echo "🔧 Configuring R1 (Core Router + RPKI Client)..."
 cat > configs/R1/frr.conf << 'R1_CONFIG'
 frr version 10.2.1_git
@@ -136,6 +122,10 @@ interface eth2
 interface lo
  ip address 1.1.1.1/32
 !
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
+!
 router bgp 65001
  bgp router-id 1.1.1.1
  no bgp ebgp-requires-policy
@@ -153,7 +143,7 @@ line vty
 !
 R1_CONFIG
 
-# R2 Configuration - Short Path Router with RPKI
+# R2 Configuration
 echo "🔧 Configuring R2 (Short Path + RPKI Client)..."
 cat > configs/R2/frr.conf << 'R2_CONFIG'
 frr version 10.2.1_git
@@ -175,6 +165,10 @@ interface eth3
 interface lo
  ip address 2.2.2.2/32
 !
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
+!
 router bgp 65002
  bgp router-id 2.2.2.2
  no bgp ebgp-requires-policy
@@ -194,7 +188,7 @@ line vty
 !
 R2_CONFIG
 
-# R3 Configuration - Destination Router
+# R3 Configuration
 echo "🔧 Configuring R3 (Destination Router)..."
 cat > configs/R3/frr.conf << 'R3_CONFIG'
 frr version 10.2.1_git
@@ -213,6 +207,10 @@ interface eth2
 interface lo
  ip address 3.3.3.3/32
 !
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
+!
 router bgp 65003
  bgp router-id 3.3.3.3
  no bgp ebgp-requires-policy
@@ -230,7 +228,7 @@ line vty
 !
 R3_CONFIG
 
-# R4 Configuration - Long Path First Hop
+# R4 Configuration
 echo "🔧 Configuring R4 (Long Path Router + RPKI)..."
 cat > configs/R4/frr.conf << 'R4_CONFIG'
 frr version 10.2.1_git
@@ -249,6 +247,10 @@ interface eth2
 interface lo
  ip address 4.4.4.4/32
 !
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
+!
 router bgp 65004
  bgp router-id 4.4.4.4
  no bgp ebgp-requires-policy
@@ -266,7 +268,7 @@ line vty
 !
 R4_CONFIG
 
-# R5 Configuration - Long Path Second Hop with RPKI
+# R5 Configuration
 echo "🔧 Configuring R5 (Long Path + RPKI Client)..."
 cat > configs/R5/frr.conf << 'R5_CONFIG'
 frr version 10.2.1_git
@@ -288,6 +290,10 @@ interface eth3
 interface lo
  ip address 5.5.5.5/32
 !
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
+!
 router bgp 65005
  bgp router-id 5.5.5.5
  no bgp ebgp-requires-policy
@@ -307,7 +313,7 @@ line vty
 !
 R5_CONFIG
 
-# R6 Configuration - Anycast Server 1 (VALID via RPKI)
+# R6 Configuration
 echo "🔧 Configuring R6 (Anycast Server 1 - RPKI VALID)..."
 cat > configs/R6/frr.conf << 'R6_CONFIG'
 frr version 10.2.1_git
@@ -323,6 +329,10 @@ interface eth1
 interface lo
  ip address 6.6.6.6/32
  ip address 10.10.10.10/32
+!
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
 !
 router bgp 65006
  bgp router-id 6.6.6.6
@@ -343,7 +353,7 @@ line vty
 !
 R6_CONFIG
 
-# R7 Configuration - Anycast Server 2 (INVALID via RPKI)
+# R7 Configuration
 echo "🔧 Configuring R7 (Anycast Server 2 - RPKI INVALID)..."
 cat > configs/R7/frr.conf << 'R7_CONFIG'
 frr version 10.2.1_git
@@ -359,6 +369,10 @@ interface eth1
 interface lo
  ip address 7.7.7.7/32
  ip address 10.10.10.10/32
+!
+rpki
+ rpki cache 172.20.20.3 3324 preference 1
+ rpki polling_period 30
 !
 router bgp 65007
  bgp router-id 7.7.7.7
@@ -382,7 +396,7 @@ R7_CONFIG
 echo "✅ All router configurations with RPKI support created"
 echo ""
 
-# Create the containerlab topology file with Krill and Routinator
+# Create the containerlab topology file
 echo "📋 Creating containerlab topology with Krill and RPKI..."
 cat > krill-test.clab.yml << 'TOPOLOGY'
 name: bgp-anycast-krill
@@ -400,7 +414,6 @@ topology:
         KRILL_ADMIN_TOKEN: secret
         KRILL_LOG_LEVEL: Info
         KRILL_TA_SUPPORT_ENABLED: "true"
-
       binds:
         - ./configs/krill/krill.conf:/etc/krill.conf
         - ./configs/krill:/var/krill/data
@@ -489,19 +502,16 @@ topology:
         - ip addr replace 10.10.10.10/32 dev lo
 
   links:
-    # Core topology
     - endpoints: ["R1:eth1", "R2:eth1"]
     - endpoints: ["R2:eth2", "R3:eth1"]
     - endpoints: ["R1:eth2", "R4:eth1"]
     - endpoints: ["R4:eth2", "R5:eth1"]
     - endpoints: ["R5:eth2", "R3:eth2"]
-    
-    # Anycast server connections
     - endpoints: ["R2:eth3", "R6:eth1"]
     - endpoints: ["R5:eth3", "R7:eth1"]
 TOPOLOGY
 
-echo "✅ Containerlab topology with Krill and RPKI created"
+echo "✅ Containerlab topology created"
 echo ""
 
 # Clean up any existing labs

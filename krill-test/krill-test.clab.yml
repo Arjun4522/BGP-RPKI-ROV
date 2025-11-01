@@ -13,7 +13,6 @@ topology:
         KRILL_ADMIN_TOKEN: secret
         KRILL_LOG_LEVEL: Info
         KRILL_TA_SUPPORT_ENABLED: "true"
-
       binds:
         - ./configs/krill/krill.conf:/etc/krill.conf
         - ./configs/krill:/var/krill/data
@@ -102,13 +101,10 @@ topology:
         - ip addr replace 10.10.10.10/32 dev lo
 
   links:
-    # Core topology
     - endpoints: ["R1:eth1", "R2:eth1"]
     - endpoints: ["R2:eth2", "R3:eth1"]
     - endpoints: ["R1:eth2", "R4:eth1"]
     - endpoints: ["R4:eth2", "R5:eth1"]
     - endpoints: ["R5:eth2", "R3:eth2"]
-    
-    # Anycast server connections
     - endpoints: ["R2:eth3", "R6:eth1"]
     - endpoints: ["R5:eth3", "R7:eth1"]
