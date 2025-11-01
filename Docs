@@ -1,0 +1,14 @@
+sudo docker cp configs/krill/krill.conf clab-bgp-anycast-krill-krill:/var/krill/data/krill.conf
+
+sudo docker restart clab-bgp-anycast-krill-krill
+clab-bgp-anycast-krill-krill
+
+sudo docker logs clab-bgp-anycast-krill-krill
+
+sudo docker exec clab-bgp-anycast-krill-krill cat /var/krill/data/krill.conf
+
+sudo docker exec clab-bgp-anycast-krill-krill krillc --token secret list
+
+sudo docker exec clab-bgp-anycast-krill-krill krillc --token secret show --ca testbed
+
+sudo docker exec "$KRILL_CONTAINER" krillc --token secret roas update --ca "$CA_NAME" --add "10.10.10.10/32 => 65006"

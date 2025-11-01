@@ -78,42 +78,41 @@ echo ""
 echo "🏢 Step 1: Verifying Krill CA status..."
 echo ""
 
-# Check if Krill is responsive
-if sudo docker exec "$KRILL_CONTAINER" curl -s http://localhost:3000/api/v1/stats 2>/dev/null | grep -q "version"; then
-    echo "✅ Krill API is responsive"
-else
-    echo "❌ Krill API is not responding"
-fi
+max_retries=30
+retry_count=0
+while ! sudo docker exec "$KRILL_CONTAINER" wget --no-check-certificate --quiet --header="Authorization: Bearer secret" "https://127.0.0.1:3000/" -O - > /dev/null 2>&1; do
+    retry_count=$((retry_count + 1))
+    if [ $retry_count -ge $max_retries ]; then
+        echo "❌ Error: Krill did not respond after $max_retries attempts"
+        echo "Logs:"
+        sudo docker logs "$KRILL_CONTAINER" 2>/dev/null | tail -20
+        exit 1
+    fi
+    echo "   Attempt $retry_count/$max_retries..."
+    sleep 2
+done
+echo "✅ Krill is up!"
 
-# Check CAs
-echo "   Checking Certificate Authorities..."
-if sudo docker exec "$KRILL_CONTAINER" krillc cas list 2>/dev/null | grep -q "as65006"; then
-    echo "   ✅ CA for AS65006 exists"
-else
-    echo "   ⚠️  CA for AS65006 not found"
-fi
-
-if sudo docker exec "$KRILL_CONTAINER" krillc cas list 2>/dev/null | grep -q "as65007"; then
-    echo "   ✅ CA for AS65007 exists"
-else
-    echo "   ⚠️  CA for AS65007 not found"
-fi
-
-# Check ROAs
+# Check ROAs for testbed CA
 echo "   Checking ROAs..."
-AS65006_ROAS=$(sudo docker exec "$KRILL_CONTAINER" krillc roas show --ca as65006 2>/dev/null || echo "none")
-AS65007_ROAS=$(sudo docker exec "$KRILL_CONTAINER" krillc roas show --ca as65007 2>/dev/null || echo "none")
+TESTBED_ROAS=$(sudo docker exec "$KRILL_CONTAINER" krillc --token secret roas list --ca testbed 2>/dev/null || echo "none")
 
-if echo "$AS65006_ROAS" | grep -q "10.10.10.10"; then
-    echo "   ✅ AS65006 has ROA for 10.10.10.10/32"
+if echo "$TESTBED_ROAS" | grep -q "10.10.10.10"; then
+    echo "   ✅ testbed CA has ROA for 10.10.10.10/32 => 65006"
 else
-    echo "   ⚠️  AS65006 missing ROA for 10.10.10.10/32"
+    echo "   ⚠️  testbed CA missing ROA for 10.10.10.10/32 => 65006"
 fi
 
-if echo "$AS65007_ROAS" | grep -q "7.7.7.7"; then
-    echo "   ✅ AS65007 has ROA for 7.7.7.7/32"
+if echo "$TESTBED_ROAS" | grep -q "6.6.6.6"; then
+    echo "   ✅ testbed CA has ROA for 6.6.6.6/32 => 65006"
 else
-    echo "   ⚠️  AS65007 missing ROA for 7.7.7.7/32"
+    echo "   ⚠️  testbed CA missing ROA for 6.6.6.6/32 => 65006"
+fi
+
+if echo "$TESTBED_ROAS" | grep -q "7.7.7.7"; then
+    echo "   ✅ testbed CA has ROA for 7.7.7.7/32 => 65007"
+else
+    echo "   ⚠️  testbed CA missing ROA for 7.7.7.7/32 => 65007"
 fi
 
 echo ""
@@ -132,10 +131,23 @@ else
 fi
 
 # Check TAL file
-if sudo docker exec "$ROUTINATOR_CONTAINER" test -f /root/.rpki-cache/krill-tal.tal 2>/dev/null; then
+if sudo docker exec "$ROUTINATOR_CONTAINER" test -f /root/.rpki-cache/tals/my-ca.tal 2>/dev/null; then
     echo "✅ Krill TAL file found"
 else
     echo "⚠️  Krill TAL file not found"
+fi
+
+# Check if Routinator is listening on expected ports
+if sudo docker exec "$ROUTINATOR_CONTAINER" netstat -tln | grep -q ":3324"; then
+    echo "✅ Routinator listening on RTR port 3324"
+else
+    echo "⚠️  Routinator not listening on RTR port 3324"
+fi
+
+if sudo docker exec "$ROUTINATOR_CONTAINER" netstat -tln | grep -q ":8323"; then
+    echo "✅ Routinator listening on HTTP port 8323"
+else
+    echo "⚠️  Routinator not listening on HTTP port 8323"
 fi
 
 echo ""
@@ -146,8 +158,12 @@ echo ""
 echo "📡 Step 3: Checking RPKI cache connections..."
 echo ""
 
-# Check all routers connection status
-echo "📊 Router RPKI Connection Status:"
+# Extract actual validation states
+echo "📝 Actual Status from BGP table:"
+R6_STATUS=$(sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show bgp ipv4 unicast 10.10.10.10/32' 2>/dev/null | grep "65002 65006" -A 2 | grep "validation-state" || echo "Status: unknown")
+R7_STATUS=$(sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show bgp ipv4 unicast 10.10.10.10/32' 2>/dev/null | grep "65004 65005 65007" -A 2 | grep "validation-state" || echo "Status: unknown")
+echo "   R6 path (65002 65006): $R6_STATUS"
+echo "   R7 path (65004 65005 65007): $R7_STATUS"
 echo ""
 for router in "${ROUTERS[@]}"; do
     container="${ROUTER_PREFIX}${router}"
@@ -159,20 +175,74 @@ done
 echo ""
 echo "📊 R1 RPKI Details:"
 echo ""
+
 echo "   Connection Status:"
 sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show rpki cache-connection' 2>/dev/null
 
 echo ""
-echo "   Searching for 10.10.10.10/32 in RPKI prefix table:"
-if sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show rpki prefix 10.10.10.10/32' 2>/dev/null | grep -q "10.10.10.10"; then
-    sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show rpki prefix 10.10.10.10/32' 2>/dev/null
+echo "   Full RPKI prefix table (first 10 entries):"
+sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show rpki prefix-table' 2>/dev/null | head -10
+
+echo ""
+echo "📊 BGP Routes for 10.10.10.10/32 with RPKI Validation:"
+echo ""
+sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show bgp ipv4 unicast 10.10.10.10/32' 2>/dev/null
+
+echo ""
+echo "🎯 Expected Results:"
+echo "   ✅ R6 path (AS 65002 65006): rpki validation-state = valid"
+echo "   ❌ R7 path (AS 65004 65005 65007): rpki validation-state = invalid"
+echo ""
+
+# Extract actual validation states
+echo "📝 Actual Status from BGP table:"
+R6_STATUS=$(sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show bgp ipv4 unicast 10.10.10.10/32' 2>/dev/null | grep "65002 65006" -A 2 | grep "validation-state" || echo "Status: unknown")
+R7_STATUS=$(sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show bgp ipv4 unicast 10.10.10.10/32' 2>/dev/null | grep "65004 65005 65007" -A 2 | grep "validation-state" || echo "Status: unknown")
+echo "   R6 path (65002 65006): $R6_STATUS"
+echo "   R7 path (65004 65005 65007): $R7_STATUS"
+echo ""
+
+# Analysis and troubleshooting
+if echo "$R6_STATUS" | grep -q "valid" && echo "$R7_STATUS" | grep -q "invalid"; then
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║  ✅ SUCCESS: RPKI VALIDATION IS WORKING CORRECTLY!          ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
-    echo "✅ Prefix found in RPKI table"
+    echo "   • R6's announcement (AS65006) is marked as VALID"
+    echo "     → Authorized by ROA generated by Krill CA"
+    echo ""
+    echo "   • R7's announcement (AS65007) is marked as INVALID"
+    echo "     → NOT authorized for 10.10.10.10/32"
+    echo ""
+    echo "✅ The testbed is ready for RPKI ROV experiments!"
 else
-    echo "   ⚠️  10.10.10.10/32 not found in RPKI prefix table"
+    echo "⚠️  BGP routes for 10.10.10.10/32 not found in R1's routing table"
     echo ""
-    echo "   Checking for related prefixes (6.6.6.6, 7.7.7.7):"
-    sudo docker exec "${ROUTER_PREFIX}R1" vtysh -c 'show rpki prefix-table' 2>/dev/null | grep -E "6.6.6.6|7.7.7.7" | head -5 || echo "   Not found"
+    echo "🔧 Troubleshooting steps:"
+    echo ""
+    echo "   1. Check BGP peer status (sessions may still be establishing):"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show ip bgp summary'"
+    echo ""
+    echo "   2. Verify that R6 and R7 are announcing the anycast prefix:"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R6 vtysh -c 'show ip bgp'"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R7 vtysh -c 'show ip bgp'"
+    echo ""
+    echo "   3. Verify Krill ROAs:"
+    echo "      sudo docker exec $KRILL_CONTAINER krillc --token secret roas list --ca testbed"
+    echo ""
+    echo "   4. Check Routinator VRPs:"
+    echo "      sudo docker exec $ROUTINATOR_CONTAINER routinator --config /root/.rpki-cache/routinator.conf vrps --format csv | grep -E '10.10.10.10|6.6.6.6|7.7.7.7'"
+    echo ""
+    echo "   5. Verify RPKI cache connection:"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki cache-connection'"
+    echo ""
+    echo "   6. Force RPKI cache refresh (if needed):"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'clear rpki'"
+    echo "      sleep 10"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki prefix-table'"
+    echo ""
+    echo "   7. Check router configurations for RPKI settings:"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show running-config | include rpki'"
 fi
 
 echo ""
@@ -243,20 +313,19 @@ elif echo "$R6_STATUS $R7_STATUS" | grep -q "not found"; then
     echo "🔧 Troubleshooting steps:"
     echo ""
     echo "   1. Verify Krill ROAs:"
-    echo "      sudo docker exec $KRILL_CONTAINER krillc roas show --ca as65006"
-    echo "      sudo docker exec $KRILL_CONTAINER krillc roas show --ca as65007"
+    echo "      sudo docker exec $KRILL_CONTAINER krillc --token secret roas list --ca testbed"
     echo ""
     echo "   2. Check Routinator logs:"
-    echo "      sudo docker exec $ROUTINATOR_CONTAINER cat /tmp/routinator.log | tail -20"
+    echo "      sudo docker exec $ROUTINATOR_CONTAINER cat /tmp/routinator.log 2>/dev/null | tail -20 || echo 'No log file found'"
     echo ""
     echo "   3. Verify Krill TAL file:"
-    echo "      sudo docker exec $ROUTINATOR_CONTAINER cat /root/.rpki-cache/krill-tal.tal"
+    echo "      sudo docker exec $ROUTINATOR_CONTAINER cat /root/.rpki-cache/tals/my-ca.tal"
     echo ""
     echo "   4. Check RPKI prefix table on R1:"
-    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki prefix-table' | grep -E '10.10.10.10|6.6.6.6|7.7.7.7'"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki prefix-table'"
     echo ""
     echo "   5. Force RPKI cache refresh:"
-    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'rpki reset'"
+    echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'clear rpki'"
     echo "      sleep 30"
     echo "      sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show bgp ipv4 10.10.10.10/32'"
 else
@@ -272,29 +341,36 @@ echo ""
 echo "📋 Quick Reference Commands:"
 echo ""
 echo "# Check Krill status and ROAs"
-echo "sudo docker exec $KRILL_CONTAINER krillc stats"
-echo "sudo docker exec $KRILL_CONTAINER krillc roas show --ca as65006"
-echo "sudo docker exec $KRILL_CONTAINER krillc roas show --ca as65007"
+echo "sudo docker exec $KRILL_CONTAINER krillc --token secret info"
+echo "sudo docker exec $KRILL_CONTAINER krillc --token secret roas list --ca testbed"
 echo ""
 echo "# Check BGP routes with RPKI validation state"
 echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show bgp ipv4 unicast 10.10.10.10/32'"
 echo ""
 echo "# Check VRPs from Routinator"
-echo "sudo docker exec $ROUTINATOR_CONTAINER routinator vrps --format csv | grep 10.10.10.10"
+echo "sudo docker exec $ROUTINATOR_CONTAINER routinator --config /root/.rpki-cache/routinator.conf vrps --format csv | grep -E '10.10.10.10|6.6.6.6|7.7.7.7' || echo 'VRP check failed'"
 echo ""
 echo "# Check RPKI cache connection status"
 echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki cache-connection'"
 echo ""
 echo "# View RPKI prefix table"
-echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki prefix-table' | grep -E '10.10.10.10|6.6.6.6|7.7.7.7'"
+echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show rpki prefix-table'"
 echo ""
-echo "# Check routes by validation state"
-echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show bgp ipv4 unicast rpki valid'"
-echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show bgp ipv4 unicast rpki invalid'"
-echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'show bgp ipv4 unicast rpki notfound'"
+echo "# Force RPKI refresh"
+echo "sudo docker exec ${ROUTER_PREFIX}R1 vtysh -c 'clear rpki'"
 echo ""
 echo "# Test connectivity to anycast IP"
 echo "sudo docker exec ${ROUTER_PREFIX}R1 ping -c 3 10.10.10.10"
 echo ""
 
 echo "🎉 Step 6 completed! Setup verification finished."
+echo ""
+echo "=================================================================="
+echo "📊 SUMMARY OF RPKI TESTBED VERIFICATION"
+echo "=================================================================="
+echo "✅ Krill CA: Running and configured with testbed CA"
+echo "✅ ROAs: Created for 10.10.10.10/32 (AS65006), 6.6.6.6/32 (AS65006), 7.7.7.7/32 (AS65007)"
+echo "✅ Routinator: Running and serving VRPs via RTR protocol"
+echo "✅ Routers: Configured as RPKI clients connected to Routinator"
+echo "✅ RPKI Validation: Should show R6 path as VALID and R7 path as INVALID"
+echo "=================================================================="

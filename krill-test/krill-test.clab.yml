@@ -25,6 +25,7 @@ topology:
       ports:
         - "3324:3324"
         - "8323:8323"
+      entrypoint: /sbin/tini -- routinator --config /root/.rpki-cache/routinator.conf server
       binds:
         - ./configs/routinator:/root/.rpki-cache
 

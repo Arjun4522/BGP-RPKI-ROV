@@ -67,7 +67,7 @@ rtr-listen = ["0.0.0.0:3324"]
 http-listen = ["0.0.0.0:8323"]
 
 # Trust anchor locator for Krill (will be updated later)
-tal-files = ["/root/.rpki-cache/tals/my-ca.tal"]
+# tal-files = ["/root/.rpki-cache/tals/my-ca.tal"]
 
 # Validation refresh interval (seconds)
 refresh = 600
@@ -412,6 +412,7 @@ topology:
       ports:
         - "3324:3324"
         - "8323:8323"
+      entrypoint: /sbin/tini -- routinator --config /root/.rpki-cache/routinator.conf server
       binds:
         - ./configs/routinator:/root/.rpki-cache
 
